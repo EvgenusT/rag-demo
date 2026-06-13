@@ -1,0 +1,41 @@
+# Architecture Decision Records
+
+## ADR-001: Вибір message broker
+
+Дата: 2024-03-15
+Статус: Прийнято
+
+Вибрано Kafka замість RabbitMQ через:
+- Потреба в replay подій (retention 7 днів)
+- Очікуване навантаження >50k повідомлень/хвилину
+- Команда вже має досвід з Kafka
+
+## ADR-002: Стратегія кешування
+
+Дата: 2024-04-10
+Статус: Прийнято
+
+Використовуємо Redis для:
+- Session storage (TTL 24 години)
+- Кешування результатів важких запитів (TTL 5 хвилин)
+- Rate limiting (sliding window)
+
+Не кешуємо: фінансові дані, персональні дані користувачів.
+
+## ADR-003: Версіонування API
+
+Дата: 2024-05-01
+Статус: Прийнято
+
+URL-based versioning: /api/v1/, /api/v2/
+Підтримуємо попередню версію 6 місяців після виходу нової.
+Deprecation headers обов'язкові.
+
+## ADR-004: Моніторинг і observability
+
+Дата: 2024-06-20
+Статус: Прийнято
+
+Стек: Prometheus + Grafana + Tempo (distributed tracing)
+Всі сервіси експортують метрики через /actuator/prometheus
+SLO: availability 99.5%, p99 latency < 500ms

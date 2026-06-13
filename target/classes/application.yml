@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: rag-demo
+
+  # --- Database (pgvector) ---
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ragdb
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  # --- Spring AI ---
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}   # береться з env змінної
+
+      chat:
+        options:
+          model: gpt-4o-mini        # дешева і достатньо розумна модель
+
+      embedding:
+        options:
+          model: text-embedding-3-small  # 1536 dimensions, дешева
+
+    vectorstore:
+      pgvector:
+        index-type: HNSW            # Hierarchical NSW — швидкий пошук
+        distance-type: COSINE_SIMILARITY
+        dimensions: 1536
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.example: DEBUG
+    org.springframework.ai: INFO

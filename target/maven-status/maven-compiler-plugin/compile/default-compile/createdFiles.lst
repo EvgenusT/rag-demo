@@ -1,0 +1,5 @@
+com\example\ragdemo\service\IngestionService.class
+com\example\ragdemo\RagDemoApplication.class
+com\example\ragdemo\controller\RagController.class
+com\example\ragdemo\config\VectorStoreConfig.class
+com\example\ragdemo\service\RagService.class

@@ -1,0 +1,40 @@
+# Team Handbook — Backend Team
+
+## Kafka Configuration
+
+Для нашого проєкту використовуємо Kafka 3.6. Consumer timeout налаштований на 30 секунд.
+Основні параметри consumer:
+- max.poll.interval.ms=30000
+- session.timeout.ms=10000
+- auto.offset.reset=earliest
+
+Важливо: якщо consumer не встигає обробити повідомлення за 30 секунд,
+Kafka вважає його мертвим і починає rebalance. Для важких операцій
+збільшуй max.poll.interval.ms або виноси обробку в окремий thread pool.
+
+## Database Guidelines
+
+Використовуємо PostgreSQL 16. Connection pool — HikariCP, максимум 20 з'єднань на pod.
+Всі міграції через Flyway, файли в db/migration/.
+
+Для запитів що займають більше 1 секунди — обов'язково додавай індекс або
+переписуй запит. Моніторимо через pg_stat_statements.
+
+## Deployment
+
+Деплоємо в Kubernetes, namespace: backend-prod.
+Rolling update стратегія: maxSurge=1, maxUnavailable=0.
+Readiness probe: GET /actuator/health, initialDelaySeconds=20.
+
+## Code Review Rules
+
+1. Мінімум 1 апрув від senior перед merge в main
+2. Всі нові ендпоінти повинні мати інтеграційний тест
+3. Не мержити якщо coverage впав нижче 80%
+4. Squash commits при merge
+
+## On-Call
+
+Ротація щотижня. Алерти приходять в Slack #alerts-prod.
+Якщо сервіс не відповідає більше 2 хвилин — одразу ескалація до tech lead.
+Runbook: https://wiki.internal/runbooks/backend-service
