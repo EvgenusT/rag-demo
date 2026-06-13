@@ -1,5 +1,7 @@
 package com.example.ragdemo.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
  * Відповідає за фази RETRIEVAL + GENERATION:
  * Питання → знайти релевантні chunks → передати LLM → відповідь
  */
+
 @Service
 public class RagService {
 
@@ -25,6 +28,7 @@ public class RagService {
     private final VectorStore vectorStore;
     private final QueryEnhancer queryEnhancer;
     private final JdbcTemplate jdbcTemplate;
+    private static final Logger log = LoggerFactory.getLogger(RagService.class);
 
     private static final String SYSTEM_PROMPT = """
             Ти — корисний асистент. Твоє ім'я - Тод. Відповідай ТІЛЬКИ на основі наданого контексту.
@@ -42,9 +46,11 @@ public class RagService {
 
     // Базовий RAG (як був)
     public String ask(String question) {
-        return chatClient.prompt()
-                .user(question)
+        long start = System.currentTimeMillis();
+
+        String answer = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
+                .user(question)
                 .advisors(RetrievalAugmentationAdvisor.builder()
                         .documentRetriever(VectorStoreDocumentRetriever.builder()
                                 .vectorStore(vectorStore)
@@ -54,14 +60,19 @@ public class RagService {
                         .build())
                 .call()
                 .content();
+
+        logQuery("ask", question, answer, start);
+        return answer;
     }
 
     // RAG з Query Rewriting
     public String askWithRewriting(String question) {
+        long start = System.currentTimeMillis();
         String enhanced = queryEnhancer.rewrite(question);
-        return chatClient.prompt()
-                .user(enhanced) // ← шукаємо по покращеному питанню
+
+        String answer = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
+                .user(enhanced)
                 .advisors(RetrievalAugmentationAdvisor.builder()
                         .documentRetriever(VectorStoreDocumentRetriever.builder()
                                 .vectorStore(vectorStore)
@@ -71,40 +82,44 @@ public class RagService {
                         .build())
                 .call()
                 .content();
+
+        logQuery("rewriting", question, answer, start);
+        return answer;
     }
 
     // RAG з HyDE
     public String askWithHyde(String question) {
+        long start = System.currentTimeMillis();
         String hypothetical = queryEnhancer.generateHypotheticalAnswer(question);
 
-        // Крок 1: шукаємо по гіпотетичній відповіді
         List<Document> docs = vectorStore.similaritySearch(
                 SearchRequest.builder()
-                        .query(hypothetical)  // ← гіпотеза для пошуку
+                        .query(hypothetical)
                         .topK(5)
                         .similarityThreshold(0.2)
                         .build()
         );
 
-        // Крок 2: будуємо контекст
         String context = docs.stream()
                 .map(Document::getText)
                 .filter(t -> t != null)
                 .collect(Collectors.joining("\n---\n"));
 
-        // Крок 3: LLM відповідає на ОРИГІНАЛЬНЕ питання
-        return chatClient.prompt()
+        String answer = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .user(u -> u.text("""
-                    Контекст із бази знань:
-                    {context}
-                    
-                    Питання: {question}
-                    """)
+                        Контекст із бази знань:
+                        {context}
+                        
+                        Питання: {question}
+                        """)
                         .param("context", context)
-                        .param("question", question))  // ← оригінальне питання
+                        .param("question", question))
                 .call()
                 .content();
+
+        logQuery("hyde", question, answer, start);
+        return answer;
     }
 
     /**
@@ -112,11 +127,16 @@ public class RagService {
      * Відповідає тільки зі свого навчання
      */
     public String askWithoutRag(String question) {
-        return chatClient.prompt()
+        long start = System.currentTimeMillis();
+
+        String answer = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .user(question)
                 .call()
                 .content();
+
+        logQuery("no-rag", question, answer, start);
+        return answer;
     }
 
     /**
@@ -124,6 +144,8 @@ public class RagService {
      * Об'єднує результати через Reciprocal Rank Fusion (RRF)
      */
     public String askWithHybrid(String question) {
+
+        long start = System.currentTimeMillis();
         // 1. Векторний пошук (семантичний)
         List<Document> vectorResults = vectorStore.similaritySearch(
                 SearchRequest.builder()
@@ -159,34 +181,56 @@ public class RagService {
                 .collect(Collectors.joining("\n---\n"));
 
         // 5. Передаємо в LLM з явним контекстом
-        return chatClient.prompt()
+        String answer = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .user(u -> u.text("""
-                    Контекст із бази знань:
-                    {context}
-                    
-                    Питання: {question}
-                    """)
+                        Контекст із бази знань:
+                        {context}
+                        
+                        Питання: {question}
+                        """)
                         .param("context", context)
                         .param("question", question))
                 .call()
                 .content();
+
+        logQuery("hybrid", question, answer, start);
+        return answer;
     }
 
     // ======== ПРИВАТНИЙ ХЕЛПЕР ========
 
     private List<String> keywordSearch(String query, int topK) {
-        // PostgreSQL Full-Text Search з ts_rank
         String sql = """
-            SELECT content
-            FROM vector_store
-            WHERE to_tsvector('english', content) @@ plainto_tsquery('english', ?)
-            ORDER BY ts_rank(
-                to_tsvector('english', content),
-                plainto_tsquery('english', ?)
-            ) DESC
-            LIMIT ?
-            """;
-        return jdbcTemplate.queryForList(sql, String.class, query, query, topK);
+                SELECT content
+                FROM vector_store
+                WHERE to_tsvector('simple', content) @@ plainto_tsquery('simple', ?)
+                ORDER BY ts_rank(
+                    to_tsvector('simple', content),
+                    plainto_tsquery('simple', ?)
+                ) DESC
+                LIMIT ?
+                """;
+
+        try {
+            return jdbcTemplate.queryForList(sql, String.class, query, query, topK);
+        } catch (Exception e) {
+            // Якщо FTS не знайшов нічого або помилка — повертаємо порожній список
+            // Vector search все одно спрацює в hybrid
+            log.warn("Keyword search failed for query '{}': {}", query, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private void logQuery(String method, String question, String answer, long startMs) {
+        long duration = System.currentTimeMillis() - startMs;
+        log.info("""
+                \n========================================
+                METHOD  : {}
+                TIME    : {} ms
+                QUESTION: {}
+                ANSWER  : {}
+                ========================================""",
+                method, duration, question, answer);
     }
 }

@@ -35,3 +35,14 @@ logging:
   level:
     com.example: DEBUG
     org.springframework.ai: INFO
+
+
+  file:
+    name=logs/rag-queries:
+      log:
+
+  logging:
+    level:
+      com:
+        example:
+          ragdemo=DEBUG:
