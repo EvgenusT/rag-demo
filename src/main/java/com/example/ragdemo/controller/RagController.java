@@ -118,4 +118,10 @@ public class RagController {
 
         return ResponseEntity.ok(debug);
     }
+
+    @GetMapping("/ask-hybrid")
+    public String askHybrid( @RequestBody Map<String, String> body) {
+        String question = body.get("question");
+        return ragService.askWithHybrid(question);
+    }
 }

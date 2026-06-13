@@ -25,7 +25,7 @@ spring:
     vectorstore:
       pgvector:
         index-type: HNSW            # Hierarchical NSW — швидкий пошук
-        distance-type: COSINE_SIMILARIT
+        distance-type: COSINE_DISTANCE
         dimensions: 1536
 
 server:
